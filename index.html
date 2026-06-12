@@ -1608,7 +1608,9 @@ const Render = {
     const onResize = () => {
       this.dpr = Math.min(1.5, devicePixelRatio || 1);
       this.w = innerWidth; this.h = innerHeight;
-      this.cv.width = this.w * this.dpr; this.cv.height = this.h * this.dpr;
+      this.cv.width = Math.round(this.w * this.dpr); this.cv.height = Math.round(this.h * this.dpr);
+      // canvas는 치환 요소라 inset:0으로 안 늘어남 — 표시 크기를 명시해야 화면과 1:1
+      this.cv.style.width = this.w + 'px'; this.cv.style.height = this.h + 'px';
     };
     addEventListener('resize', onResize); onResize();
     const px = this.ctx;
