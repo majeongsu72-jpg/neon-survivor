@@ -276,7 +276,14 @@ const Input = {
     });
     addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
     addEventListener('blur', () => { this.keys = {}; if (Game.state === 'play') Game.pause(); });
-    document.addEventListener('visibilitychange', () => { if (document.hidden && Game.state === 'play') Game.pause(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (Game.state === 'play') Game.pause();
+        AudioFX.suspendCtx(); // 화면이 가려지면 어떤 상태든 소리 정지
+      } else if (Game.state !== 'pause') {
+        AudioFX.resumeCtx();
+      }
+    });
     // 터치 조이스틱
     const joy = $('joy'), knob = $('knob');
     let touchId = null, baseX = 0, baseY = 0;
@@ -340,7 +347,8 @@ const AudioFX = {
   _lastShoot: 0,
 
   ensure() {
-    if (this.ac) { if (this.ac.state === 'suspended') this.ac.resume(); return; }
+    // 일시정지 중이거나 화면이 가려진 상태에선 자동으로 깨우지 않음
+    if (this.ac) { if (Game.state !== 'pause' && !document.hidden) this.ac.resume(); return; }
     try {
       this.ac = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) { return; }
@@ -367,6 +375,9 @@ const AudioFX = {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     return buf;
   },
+  // suspend/resume는 비동기 전환이라 state 검사로 가드하면 레이스가 생김 — 무조건 호출(중복은 no-op)
+  suspendCtx() { if (this.ac) this.ac.suspend(); },
+  resumeCtx() { if (this.ac) this.ac.resume(); },
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.value = m ? 0 : 0.8;
@@ -481,6 +492,9 @@ const Music = {
   tick() {
     if (!this.playing) return;
     const ac = this.fx.ac, spb = 60 / this.bpm, s16 = spb / 4;
+    if (ac.state !== 'running') return; // 정지 중엔 예약하지 않음
+    // 백그라운드 스로틀/일시정지 후 밀린 음표를 몰아서 재생하지 않도록 점프
+    if (this.nextTime < ac.currentTime - 0.05) this.nextTime = ac.currentTime + 0.05;
     while (this.nextTime < ac.currentTime + 0.18) {
       this.schedule(this.step, this.nextTime);
       this.nextTime += s16;
@@ -1532,12 +1546,13 @@ const Game = {
     if (this.state !== 'play') return;
     this.state = 'pause';
     UI.showPause();
+    AudioFX.suspendCtx(); // 일시정지 중엔 소리도 정지
   },
   resume() {
     if (this.state !== 'pause') return;
     this.state = 'play';
     showOverlay(null);
-    AudioFX.ensure();
+    AudioFX.resumeCtx();
     // 일시정지 사이에 밀린 레벨업 처리
     if (this.levelQueue > 0 && !this.player.dead) UI.showLevelUp();
   },
